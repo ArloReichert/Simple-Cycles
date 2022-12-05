@@ -1,0 +1,299 @@
+# CUSTOM SIMPLE CYCLES ALGORITHM USING NETWORKX UNDIRECTED GRAPH STURCTURES
+
+import matplotlib.pyplot as plt
+import networkx as nx
+import math 
+import numpy as np
+
+
+
+
+def largestKeyXFromDict(mydict):
+    # returns the point with the largest x coordinate form the dictionary input
+    mykeys = list(mydict.keys())
+    myxcoords = list(zip(*mydict.values()))[0]
+    smallest_val = max(myxcoords)
+    smallest_ind = myxcoords.index(smallest_val)
+    key = mykeys[smallest_ind]
+    return key
+
+
+def showMyGraph(graph, name, mycolor0='cyan', mycolor1='black'):
+    gpos = nx.get_node_attributes(graph, 'pos')
+    plt.figure(name)
+    nx.draw(graph, gpos, with_labels=True, node_color=mycolor0, edge_color=mycolor1)
+    plt.show()
+
+
+
+def findTheta(p1, p2):
+    # this function can be used to determine the angle that 2 points make 
+    # when connected as a line (edge) with respect to a polar coordinate system 
+    # [theta is in raidans]
+    # p1 should be the 'origin'
+    x = p2[0] - p1[0]
+    y = p2[1] - p1[1]
+    abs_theta = math.atan2(abs(y),abs(x))
+    if x > 0:       # Q1 or Q4
+        if y > 0:       # Q1
+            theta = abs_theta
+        elif y < 0:     # Q4
+            theta = 2*math.pi - abs_theta
+        else:
+            theta = 0
+    elif x < 0:     # Q2 or Q3
+        if y > 0:       # Q2
+            theta = math.pi - abs_theta
+        elif y < 0:     # Q3
+            theta = math.pi + abs_theta
+        else:
+            theta = math.pi
+    elif x == 0:    # pi/2 or 3pi/2
+        if y > 0:
+            theta = math.pi/2
+        elif y < 0:
+            theta = 3*math.pi/2
+        else: 
+            theta = 0
+    return theta
+
+
+
+def edgeAngles(root, parent, current_undirgraph, og_graph):
+    # Given a root node and original graph, sort the out edges from the root based 
+    # on their orientation relavtive to the root's input edge. This allows us to 
+    # identify the outer (perimeter) edges of the cycles that are subsequent to 
+    # the root node. 
+    # print(f'\nedgeAngles called with paraemeters: root: {root}, parent: {parent}')
+    n_angles = {}
+    mypos = nx.get_node_attributes(og_graph, 'pos')
+    root_children = list(nx.neighbors(current_undirgraph, root))
+    # print(f'root neighbours from edgeAngles call: {root_children}')
+    if parent:
+        # new axis can be any of the in_edges since they must be outside of the perimeter edges of the subgraph
+        # root_children.remove(parent)
+        p2 = mypos[parent]
+        p1 = mypos[root]
+        axis_angle_offset = findTheta(p1, p2)
+    else:
+        # case where no offset is required
+        # note that for this to work, we must start at the right-most point on the graph!!
+        p1 = mypos[root]
+        axis_angle_offset = 0
+    # print(f'Axis angle offset for root {root}/parent {parent} is: {axis_angle_offset}')
+    for node in root_children:
+        p3 = mypos[node]
+        theta = findTheta(p1, p3)
+        myangle = theta-axis_angle_offset
+        if myangle < 0:
+            realangle = 2*math.pi+myangle
+        else:       # >= 0
+            realangle = myangle
+        n_angles[node] = realangle
+    return n_angles
+
+def classifyEdges(angles):
+    # given a dictionary of angles to nodes (from an unspecified root)
+    # output the geometrically sorted edges based on the assumption that the 
+    # root node is on the perimeter of the graph and thus there will always be two perimeter edges
+    # print(f'classifyEdges called with angle dict: {angles}')
+    rads = list(angles.values())
+    nodes = list(angles.keys())
+    sorted_rads = sorted(rads)
+    sorted_edges = []
+    for angle in sorted_rads:
+        i_ind = rads.index(angle)
+        sorted_edges.append(nodes[i_ind])
+    return sorted_edges
+
+def largestAngularLeap(child, parent, undir_graph, og_graph):
+    # given a parent node and a child node, determine the next DFS step to take based on 
+    # the idea that the fastest way to close a cycle/pathway is by taking the edge that 
+    # presents the 'largest angular leap' from the parent edge
+    # print(f'LAL --> child: {child}, parent: {parent}')
+    # showMyGraph(undir_graph, 'graph from LAL POV')
+    outangles = edgeAngles(child, parent, undir_graph, og_graph)
+    sorted_paths = classifyEdges(outangles)
+    # print(outangles)
+    # print(f'sorted paths: {sorted_paths}\nShould take {sorted_paths[-1]}...')
+    return sorted_paths[-1]
+
+
+def LFS(current_node, from_node, destination_node, graph, og_graph, pathlist=[]):
+    # LFS = Loop First Search!
+    # (uses the largest angular leap method)
+    # print(f'LFS called!! parameters are: currentnode {current_node}, fromnode {from_node}, destination_node {destination_node}, pathlist {pathlist}')
+    pathlist.append(current_node)
+    if current_node == destination_node:
+        # print(f'pathlist at destination = {pathlist}')
+        return pathlist
+    else: 
+        next_node = largestAngularLeap(current_node, from_node, graph, og_graph)
+        # print(f'LAL within current LFS: {next_node}')
+        LFS(next_node, current_node, destination_node, graph, og_graph, pathlist)
+    return pathlist
+
+
+def findNearestCycles(root, parent, graph, og_graph):
+    # print(f'findNearestCycles called with parameters: root: {root}, parent: {parent}')
+    myangles = edgeAngles(root, parent, graph.to_undirected(), og_graph)
+    sorted_edges = classifyEdges(myangles)
+    nearest_cycles = []
+    # print(f'myangles and sortededges are: {myangles}; {sorted_edges} for FNC w/ above parameters')
+    for i in range(len(sorted_edges)-1):
+        next_node = sorted_edges[i]
+        cycle = LFS(next_node, root, root, graph, og_graph, pathlist=[root])
+        nearest_cycles.append(cycle) 
+        # print(f'nearest_cycles = {nearest_cycles}')
+        # print(f'cycle for {next_node}: {cycle}')
+    return nearest_cycles
+
+
+def eliminate1degrees(agraph):
+    # given a graph with a bunch of 1 degree nodes, delete the 1 degree nodes until 
+    # there are only nodes of 2 degree or higher 
+    iters = 0
+    cleangraph = agraph.copy()
+    while min(list(zip(*cleangraph.degree()))[1]) <=1:
+        # print(f'E1D conditional: {sorted(list(zip(*cleangraph.degree()))[1])}')
+        iters += 1
+        if iters > 200:
+            print('ITERS >200 E1D')
+            break
+        bad_nodes = [x for x in cleangraph.nodes if cleangraph.degree[x]<2]
+        # print(f'bad NODES before while loop2: {bad_nodes}')
+        i = 0
+        while bad_nodes:
+            i+=1
+            if i > 10000: 
+                print('OVER 10000 ITERATIONS OF ELIMATE1DEGREES!')
+                break
+            node = bad_nodes[0]
+            if cleangraph.degree(node) <= 1:
+                cleangraph.remove_node(node)
+            bad_nodes.pop(0)
+        # print(f'bad NODES after while loop2: {bad_nodes}')
+        # print(f'E1D conditional AFTER: {sorted(list(zip(*cleangraph.degree()))[1])}')
+        if cleangraph.number_of_nodes() == 0:
+            break
+    return cleangraph
+
+
+def findPeriNodes(graph):
+    # DOES NOT FIND ALL PERIMETER NODES!
+    # just finds at least one node that has a maximum coordinate and 
+    # therefore should be a perimeter node
+    mypos = nx.get_node_attributes(graph, 'pos')
+    maxx = 0
+    maxy = 0
+    minx = math.inf
+    miny = math.inf
+    perinodes = [None, None, None, None]            # this should become a list of format [maxx, maxy, minx, miny]
+    for node, coords in mypos.items():
+        x = coords[0]
+        y = coords[1]
+        if x > maxx:
+            maxx = x
+            perinodes[0] = node
+        if y > maxy:
+            maxy = y
+            perinodes[1] = node
+        if x < minx:
+            minx = x
+            perinodes[2] = node
+        if y < miny:
+            miny = y
+            perinodes[3] = node
+    return perinodes
+
+
+def bfs2dir(graph):
+    # takes an undirected intersection only graph as input and returns the same graph
+    # but with all edges directed in a BFS fashion
+    newgraph = nx.DiGraph(graph)
+    perimeter_nodes = findPeriNodes(graph)
+    root = perimeter_nodes[0]
+    myq = [root]
+    visited = []
+    print(f'(function bsf2dir) Starting at root: {root}')
+    number_edges = newgraph.number_of_nodes()
+    max_iters = number_edges*5
+    iters = 0
+    while myq:
+        node_i = myq[0]
+        if node_i not in visited:
+            visited.append(node_i)
+            for neighbour in newgraph.neighbors(node_i):
+                if neighbour not in visited:
+                    # print(f'visiting neighbour: {neighbour} of node_i: {node_i}')
+                    # print(f'current queue: {myq}')
+                    # print(f'current visited list: {visited}\n')
+                    # print(f'would be removing edge from {neighbour} to {node_i}\n')
+                    newgraph.remove_edge(neighbour, node_i)
+                    myq.append(neighbour)
+        myq.pop(0)
+        iters += 1
+        if iters > max_iters:
+            break
+    return newgraph
+
+
+def findElementaryCircuits(graph):
+    # the main function used to identify all simple cycles (aka elementary circuits)
+    # in the (BFS-style) directed graph input
+    # Process overview:
+    #   A) iterate over graph and remove any vistigial 1 degree nodes
+    #   B) assign any nodes that have ONLY outgoing edges to a "root" queue
+    #   C) while there are roots in the queue, identify their closest cycles via LFS() function
+    # returns a list of cycle lists
+    mypos = nx.get_node_attributes(graph, 'pos')
+    roots = []
+    root_dict = {}
+    dirgraph = graph.copy()
+    undirgraph = graph.copy().to_undirected()
+    cycles = []
+    iters1, iters2 = 0, 0
+    # taking off all one-degree nodes before proceeding:
+    dirgraph = eliminate1degrees(dirgraph)          # We use the BFS directed graph to direct our operations on the undirected one
+    undirgraph = eliminate1degrees(undirgraph)      # therefore, it is important to perform the same operations on both
+    # parse the entire graph to find the next root node(s) and store them in a queue:
+    while dirgraph.number_of_nodes() > 2:
+        iters1 += 1
+        dirgraph = bfs2dir(dirgraph.to_undirected())
+        # identifying all nodes that can be considered roots and adding them to the roots list:
+        for node in dirgraph.nodes:                 # (this can only be done with the directed graph!)
+            if dirgraph.degree[node] == len(list(dirgraph.neighbors(node))):
+                root_dict[node] = mypos[node]
+        roots.append(largestKeyXFromDict(root_dict))
+        # while there are roots in the queue, LFS their children until the appropriate cycles have been found, then delete from graph:
+        # after assessing a root and identifying its cycles, delete it and any nodes that become 1-degree afterwards
+        # if one of the subsequent 1-degree nodes is a root still in the roots list, delete it from the list before continuing
+        # this ensures that there will not be any roots in the root queue that have been deleted before assessment
+        # print(f'roots queue inside of FindElementaryCircuits: {roots}')
+        while roots:
+            current_root = roots[0]
+            # print(f'assessing root: {current_root} out of root queue: {roots}')
+            # showMyGraph(dirgraph, 'newgraph in findElementaryCircuits')
+            # if iters1 == 1:
+            cycles_i = findNearestCycles(current_root, None, undirgraph, graph)
+            # else:
+            #     print(f'iters >1 therefore parent exists and is: {list(graph.predecessors(current_root))[0]}')
+            #     cycles_i = findNearestCycles(current_root, list(graph.predecessors(current_root))[0], undirgraph, graph)
+            cycles += cycles_i
+            dirgraph.remove_node(current_root)          # remove the current node and its edges from the graph
+            undirgraph.remove_node(current_root)        # also from the undirected graph
+            roots.pop(0)                            # remove the current node from the queue
+            iters2 += 1
+            dirgraph = eliminate1degrees(dirgraph)          # clean up each graph after removing nodes and before next iteration
+            undirgraph = eliminate1degrees(undirgraph)      # clean up each graph after removing nodes and before next iteration
+            for root_node in roots:
+                if root_node not in list(dirgraph.nodes):
+                    roots.remove(root_node)
+            if iters2 > 1000:
+                print(f'FIND ALL ELEM CIRCUITS ITERS3 EXCEEDED THRESHOLD') 
+                break
+        if iters1 > 1000:
+            print(f'FIND ALL ELEM CIRCUITS ITERS1 EXCEEDED THRESHOLD') 
+            break
+        root_dict = {}      # empty the old root dictionary so that none of the deleted roots are inside
+    return cycles
